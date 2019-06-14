@@ -298,25 +298,25 @@ public:
     
     double cos_theta1 = std::cos(conf1->theta());
     double sin_theta1 = std::sin(conf1->theta()); 
-	double c_sub_s = cos_theta1 - sin_theta1;
-	double s_add_c = sin_theta1 + cos_theta1;
+    double c_sub_s = cos_theta1 - sin_theta1;
+    double s_add_c = sin_theta1 + cos_theta1;
     double dtheta = g2o::normalize_theta(conf2->theta() - conf1->theta());
-	double edge1 = (
-		(c_sub_s*deltaS.x() + s_add_c*deltaS.y()) / cfg_->robot.max_vel_x +
-		dtheta / cfg_->robot.max_vel_theta
-	) / deltaT->estimate();
-	double edge2 = (
-		(c_sub_s*deltaS.x() + s_add_c*deltaS.y()) / cfg_->robot.max_vel_x -
-		dtheta / cfg_->robot.max_vel_theta
-	) / deltaT->estimate();
-	double edge3 = (
-		(c_sub_s*deltaS.x() - s_add_c*deltaS.y()) / cfg_->robot.max_vel_x +
-		dtheta / cfg_->robot.max_vel_theta
-	) / deltaT->estimate();
-	double edge4 = (
-		(c_sub_s*deltaS.x() - s_add_c*deltaS.y()) / cfg_->robot.max_vel_x -
-		dtheta / cfg_->robot.max_vel_theta
-	) / deltaT->estimate();
+    double edge1 = (
+        (c_sub_s*deltaS.x() + s_add_c*deltaS.y()) / cfg_->robot.max_vel_x +
+        dtheta / cfg_->robot.max_vel_theta
+    ) / deltaT->estimate();
+    double edge2 = (
+        (c_sub_s*deltaS.x() + s_add_c*deltaS.y()) / cfg_->robot.max_vel_x -
+        dtheta / cfg_->robot.max_vel_theta
+    ) / deltaT->estimate();
+    double edge3 = (
+        (c_sub_s*deltaS.x() - s_add_c*deltaS.y()) / cfg_->robot.max_vel_x +
+        dtheta / cfg_->robot.max_vel_theta
+    ) / deltaT->estimate();
+    double edge4 = (
+        (c_sub_s*deltaS.x() - s_add_c*deltaS.y()) / cfg_->robot.max_vel_x -
+        dtheta / cfg_->robot.max_vel_theta
+    ) / deltaT->estimate();
     
     // transform conf2 into current robot frame conf1 (inverse 2d rotation matrix)
     double r_dx =  cos_theta1*deltaS.x() + sin_theta1*deltaS.y();
