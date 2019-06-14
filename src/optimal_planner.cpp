@@ -1128,9 +1128,9 @@ void TebOptimalPlanner::computeCurrentCost(double obst_cost_scale, double viapoi
     }
 
     EdgeKinematicsMecanum* edge_kinematics_m = dynamic_cast<EdgeKinematicsMecanum*>(*it);
-    if (edge_kinematics_cl!=NULL)
+    if (edge_kinematics_m!=NULL)
     {
-      cost_ += edge_kinematics_cl->getError().squaredNorm();
+      cost_ += edge_kinematics_m->getError().squaredNorm();
       continue;
     }
     

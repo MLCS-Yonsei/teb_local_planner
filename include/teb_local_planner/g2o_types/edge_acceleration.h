@@ -729,7 +729,7 @@ public:
 
 
 /**
- * @class EdgeAccelerationHolonomic
+ * @class EdgeAccelerationMecanum
  * @brief Edge defining the cost function for limiting the translational and rotational acceleration.
  * 
  * The edge depends on five vertices \f$ \mathbf{s}_i, \mathbf{s}_{ip1}, \mathbf{s}_{ip2}, \Delta T_i, \Delta T_{ip1} \f$ and minimizes:
