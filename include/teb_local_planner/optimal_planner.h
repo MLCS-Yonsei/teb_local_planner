@@ -663,15 +663,6 @@ protected:
    * @see optimizeGraph
    */
   void AddEdgesKinematicsCarlike();
-
-  /**
-   * @brief Add all edges (local cost functions) for satisfying kinematic constraints of a Mecanum-wheeled robot
-   * @warning do not combine with AddEdgesKinematicsDiffDrive()
-   * @see AddEdgesKinematicsDiffDrive
-   * @see buildGraph
-   * @see optimizeGraph
-   */
-  void AddEdgesKinematicsMecanum();
   
   /**
    * @brief Add all edges (local cost functions) for prefering a specifiy turning direction (by penalizing the other one)
