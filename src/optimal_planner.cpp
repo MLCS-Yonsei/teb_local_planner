@@ -732,21 +732,46 @@ void TebOptimalPlanner::AddEdgesVelocity()
       optimizer_->addEdge(velocity_edge);
     }
   }
-  else // holonomic-robot
+  //else // holonomic-robot
+  //{
+    //if ( cfg_->optim.weight_max_vel_x==0 && cfg_->optim.weight_max_vel_y==0 && cfg_->optim.weight_max_vel_theta==0)
+      //return; // if weight equals zero skip adding edges!
+      
+    //int n = teb_.sizePoses();
+    //Eigen::Matrix<double,3,3> information;
+    //information.fill(0);
+    //information(0,0) = cfg_->optim.weight_max_vel_x;
+    //information(1,1) = cfg_->optim.weight_max_vel_y;
+    //information(2,2) = cfg_->optim.weight_max_vel_theta;
+
+    //for (int i=0; i < n - 1; ++i)
+    //{
+      //EdgeVelocityHolonomic* velocity_edge = new EdgeVelocityHolonomic;
+      //velocity_edge->setVertex(0,teb_.PoseVertex(i));
+      //velocity_edge->setVertex(1,teb_.PoseVertex(i+1));
+      //velocity_edge->setVertex(2,teb_.TimeDiffVertex(i));
+      //velocity_edge->setInformation(information);
+      //velocity_edge->setTebConfig(*cfg_);
+      //optimizer_->addEdge(velocity_edge);
+    //} 
+    
+  //}
+  else // Mecanum-wheeled robot
   {
     if ( cfg_->optim.weight_max_vel_x==0 && cfg_->optim.weight_max_vel_y==0 && cfg_->optim.weight_max_vel_theta==0)
       return; // if weight equals zero skip adding edges!
       
     int n = teb_.sizePoses();
-    Eigen::Matrix<double,3,3> information;
+    Eigen::Matrix<double,4,4> information;
     information.fill(0);
     information(0,0) = cfg_->optim.weight_max_vel_x;
-    information(1,1) = cfg_->optim.weight_max_vel_y;
-    information(2,2) = cfg_->optim.weight_max_vel_theta;
+    information(1,1) = cfg_->optim.weight_max_vel_x;
+    information(2,2) = cfg_->optim.weight_max_vel_x;
+    information(3,3) = cfg_->optim.weight_max_vel_x;
 
     for (int i=0; i < n - 1; ++i)
     {
-      EdgeVelocityHolonomic* velocity_edge = new EdgeVelocityHolonomic;
+      EdgeVelocityMecanum* velocity_edge = new EdgeVelocityMecanum;
       velocity_edge->setVertex(0,teb_.PoseVertex(i));
       velocity_edge->setVertex(1,teb_.PoseVertex(i+1));
       velocity_edge->setVertex(2,teb_.TimeDiffVertex(i));
@@ -812,18 +837,67 @@ void TebOptimalPlanner::AddEdgesAcceleration()
       optimizer_->addEdge(acceleration_edge);
     }  
   }
-  else // holonomic robot
+  //else // holonomic robot
+  //{
+    //Eigen::Matrix<double,3,3> information;
+    //information.fill(0);
+    //information(0,0) = cfg_->optim.weight_acc_lim_x;
+    //information(1,1) = cfg_->optim.weight_acc_lim_y;
+    //information(2,2) = cfg_->optim.weight_acc_lim_theta;
+    
+    //// check if an initial velocity should be taken into accound
+    //if (vel_start_.first)
+    //{
+      //EdgeAccelerationHolonomicStart* acceleration_edge = new EdgeAccelerationHolonomicStart;
+      //acceleration_edge->setVertex(0,teb_.PoseVertex(0));
+      //acceleration_edge->setVertex(1,teb_.PoseVertex(1));
+      //acceleration_edge->setVertex(2,teb_.TimeDiffVertex(0));
+      //acceleration_edge->setInitialVelocity(vel_start_.second);
+      //acceleration_edge->setInformation(information);
+      //acceleration_edge->setTebConfig(*cfg_);
+      //optimizer_->addEdge(acceleration_edge);
+    //}
+
+    //// now add the usual acceleration edge for each tuple of three teb poses
+    //for (int i=0; i < n - 2; ++i)
+    //{
+      //EdgeAccelerationHolonomic* acceleration_edge = new EdgeAccelerationHolonomic;
+      //acceleration_edge->setVertex(0,teb_.PoseVertex(i));
+      //acceleration_edge->setVertex(1,teb_.PoseVertex(i+1));
+      //acceleration_edge->setVertex(2,teb_.PoseVertex(i+2));
+      //acceleration_edge->setVertex(3,teb_.TimeDiffVertex(i));
+      //acceleration_edge->setVertex(4,teb_.TimeDiffVertex(i+1));
+      //acceleration_edge->setInformation(information);
+      //acceleration_edge->setTebConfig(*cfg_);
+      //optimizer_->addEdge(acceleration_edge);
+    //}
+    
+    //// check if a goal velocity should be taken into accound
+    //if (vel_goal_.first)
+    //{
+      //EdgeAccelerationHolonomicGoal* acceleration_edge = new EdgeAccelerationHolonomicGoal;
+      //acceleration_edge->setVertex(0,teb_.PoseVertex(n-2));
+      //acceleration_edge->setVertex(1,teb_.PoseVertex(n-1));
+      //acceleration_edge->setVertex(2,teb_.TimeDiffVertex( teb_.sizeTimeDiffs()-1 ));
+      //acceleration_edge->setGoalVelocity(vel_goal_.second);
+      //acceleration_edge->setInformation(information);
+      //acceleration_edge->setTebConfig(*cfg_);
+      //optimizer_->addEdge(acceleration_edge);
+    //}  
+  //}
+  else // Mecanum-wheeled robot
   {
-    Eigen::Matrix<double,3,3> information;
+    Eigen::Matrix<double,4,4> information;
     information.fill(0);
     information(0,0) = cfg_->optim.weight_acc_lim_x;
-    information(1,1) = cfg_->optim.weight_acc_lim_y;
-    information(2,2) = cfg_->optim.weight_acc_lim_theta;
+    information(1,1) = cfg_->optim.weight_acc_lim_x;
+    information(2,2) = cfg_->optim.weight_acc_lim_x;
+    information(3,3) = cfg_->optim.weight_acc_lim_x;
     
     // check if an initial velocity should be taken into accound
     if (vel_start_.first)
     {
-      EdgeAccelerationHolonomicStart* acceleration_edge = new EdgeAccelerationHolonomicStart;
+      EdgeAccelerationMecanumStart* acceleration_edge = new EdgeAccelerationMecanumStart;
       acceleration_edge->setVertex(0,teb_.PoseVertex(0));
       acceleration_edge->setVertex(1,teb_.PoseVertex(1));
       acceleration_edge->setVertex(2,teb_.TimeDiffVertex(0));
@@ -836,7 +910,7 @@ void TebOptimalPlanner::AddEdgesAcceleration()
     // now add the usual acceleration edge for each tuple of three teb poses
     for (int i=0; i < n - 2; ++i)
     {
-      EdgeAccelerationHolonomic* acceleration_edge = new EdgeAccelerationHolonomic;
+      EdgeAccelerationMecanum* acceleration_edge = new EdgeAccelerationMecanum;
       acceleration_edge->setVertex(0,teb_.PoseVertex(i));
       acceleration_edge->setVertex(1,teb_.PoseVertex(i+1));
       acceleration_edge->setVertex(2,teb_.PoseVertex(i+2));
@@ -850,7 +924,7 @@ void TebOptimalPlanner::AddEdgesAcceleration()
     // check if a goal velocity should be taken into accound
     if (vel_goal_.first)
     {
-      EdgeAccelerationHolonomicGoal* acceleration_edge = new EdgeAccelerationHolonomicGoal;
+      EdgeAccelerationMecanumGoal* acceleration_edge = new EdgeAccelerationMecanumGoal;
       acceleration_edge->setVertex(0,teb_.PoseVertex(n-2));
       acceleration_edge->setVertex(1,teb_.PoseVertex(n-1));
       acceleration_edge->setVertex(2,teb_.TimeDiffVertex( teb_.sizeTimeDiffs()-1 ));
