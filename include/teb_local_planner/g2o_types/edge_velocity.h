@@ -327,7 +327,7 @@ public:
     _error[2] = penaltyBoundToInterval(vx/cfg_->robot.max_vel_x - vy/cfg_->robot.max_vel_y + omega/cfg_->robot.max_vel_theta, 1.0, cfg_->optim.penalty_epsilon);
     _error[3] = penaltyBoundToInterval(vx/cfg_->robot.max_vel_x - vy/cfg_->robot.max_vel_y - omega/cfg_->robot.max_vel_theta, 1.0, cfg_->optim.penalty_epsilon);
 
-    ROS_ASSERT_MSG(std::isfinite(_error[0]) && std::isfinite(_error[1]) && std::isfinite(_error[2] && std::isfinite(_error[3]),
+    ROS_ASSERT_MSG(std::isfinite(_error[0]) && std::isfinite(_error[1]) && std::isfinite(_error[2]) && std::isfinite(_error[3]),
                    "EdgeVelocityMecanum::computeError() _error[0]=%f _error[1]=%f _error[2]=%f _error[3]=%f\n",_error[0],_error[1],_error[2],_error[3]);
   }
  

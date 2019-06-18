@@ -810,9 +810,8 @@ public:
     _error[3] = penaltyBoundToInterval(acc_x/cfg_->robot.acc_lim_x - acc_y/cfg_->robot.acc_lim_y - acc_rot/cfg_->robot.acc_lim_theta, 1.0, cfg_->optim.penalty_epsilon);
 
     
-    ROS_ASSERT_MSG(std::isfinite(_error[0]), "EdgeAcceleration::computeError() translational: _error[0]=%f\n",_error[0]);
-    ROS_ASSERT_MSG(std::isfinite(_error[1]), "EdgeAcceleration::computeError() strafing: _error[1]=%f\n",_error[1]);
-    ROS_ASSERT_MSG(std::isfinite(_error[2]), "EdgeAcceleration::computeError() rotational: _error[2]=%f\n",_error[2]);
+    ROS_ASSERT_MSG(std::isfinite(_error[0]) && std::isfinite(_error[1]) && std::isfinite(_error[2]) && std::isfinite(_error[3]),
+                   "EdgeAcceleration::computeError() _error[0]=%f _error[1]=%f _error[2]=%f _error[3]=%f\n",_error[0],_error[1],_error[2],_error[3]);
   }
 
 public: 
@@ -887,14 +886,14 @@ public:
     double omega2 = g2o::normalize_theta(pose2->theta() - pose1->theta()) / dt->dt();
     double acc_rot  = (omega2 - omega1) / dt->dt();
       
+    _error[2] = penaltyBoundToInterval(acc_rot,cfg_->robot.acc_lim_theta,cfg_->optim.penalty_epsilon);
     _error[0] = penaltyBoundToInterval(acc_x/cfg_->robot.acc_lim_x + acc_y/cfg_->robot.acc_lim_y + acc_rot/cfg_->robot.acc_lim_theta, 1.0, cfg_->optim.penalty_epsilon);
     _error[1] = penaltyBoundToInterval(acc_x/cfg_->robot.acc_lim_x + acc_y/cfg_->robot.acc_lim_y - acc_rot/cfg_->robot.acc_lim_theta, 1.0, cfg_->optim.penalty_epsilon);
     _error[2] = penaltyBoundToInterval(acc_x/cfg_->robot.acc_lim_x - acc_y/cfg_->robot.acc_lim_y + acc_rot/cfg_->robot.acc_lim_theta, 1.0, cfg_->optim.penalty_epsilon);
     _error[3] = penaltyBoundToInterval(acc_x/cfg_->robot.acc_lim_x - acc_y/cfg_->robot.acc_lim_y - acc_rot/cfg_->robot.acc_lim_theta, 1.0, cfg_->optim.penalty_epsilon);
 
-    ROS_ASSERT_MSG(std::isfinite(_error[0]), "EdgeAccelerationStart::computeError() translational: _error[0]=%f\n",_error[0]);
-    ROS_ASSERT_MSG(std::isfinite(_error[1]), "EdgeAccelerationStart::computeError() strafing: _error[1]=%f\n",_error[1]);
-    ROS_ASSERT_MSG(std::isfinite(_error[2]), "EdgeAccelerationStart::computeError() rotational: _error[2]=%f\n",_error[2]);
+    ROS_ASSERT_MSG(std::isfinite(_error[0]) && std::isfinite(_error[1]) && std::isfinite(_error[2]) && std::isfinite(_error[3]),
+                   "EdgeAccelerationStart::computeError() _error[0]=%f _error[1]=%f _error[2]=%f _error[3]=%f\n",_error[0],_error[1],_error[2],_error[3]);
   }
   
   /**
@@ -984,9 +983,8 @@ public:
     _error[2] = penaltyBoundToInterval(acc_x/cfg_->robot.acc_lim_x - acc_y/cfg_->robot.acc_lim_y + acc_rot/cfg_->robot.acc_lim_theta, 1.0, cfg_->optim.penalty_epsilon);
     _error[3] = penaltyBoundToInterval(acc_x/cfg_->robot.acc_lim_x - acc_y/cfg_->robot.acc_lim_y - acc_rot/cfg_->robot.acc_lim_theta, 1.0, cfg_->optim.penalty_epsilon);
 
-    ROS_ASSERT_MSG(std::isfinite(_error[0]), "EdgeAccelerationGoal::computeError() translational: _error[0]=%f\n",_error[0]);
-    ROS_ASSERT_MSG(std::isfinite(_error[1]), "EdgeAccelerationGoal::computeError() strafing: _error[1]=%f\n",_error[1]);
-    ROS_ASSERT_MSG(std::isfinite(_error[2]), "EdgeAccelerationGoal::computeError() rotational: _error[2]=%f\n",_error[2]);
+    ROS_ASSERT_MSG(std::isfinite(_error[0]) && std::isfinite(_error[1]) && std::isfinite(_error[2]) && std::isfinite(_error[3]),
+                   "EdgeAccelerationGoal::computeError() _error[0]=%f _error[1]=%f _error[2]=%f _error[3]=%f\n",_error[0],_error[1],_error[2],_error[3]);
   }
   
   
