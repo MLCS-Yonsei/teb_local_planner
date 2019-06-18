@@ -38,7 +38,6 @@
 
 #include <teb_local_planner/optimal_planner.h>
 #include <map>
-#include <memory>
 #include <limits>
 
 
@@ -126,19 +125,14 @@ void TebOptimalPlanner::registerG2OTypes()
   factory->registerType("EDGE_TIME_OPTIMAL", new g2o::HyperGraphElementCreator<EdgeTimeOptimal>);
   factory->registerType("EDGE_VELOCITY", new g2o::HyperGraphElementCreator<EdgeVelocity>);
   factory->registerType("EDGE_VELOCITY_HOLONOMIC", new g2o::HyperGraphElementCreator<EdgeVelocityHolonomic>);
-  factory->registerType("EDGE_VELOCITY_MECANUM", new g2o::HyperGraphElementCreator<EdgeVelocityMecanum>);
   factory->registerType("EDGE_ACCELERATION", new g2o::HyperGraphElementCreator<EdgeAcceleration>);
   factory->registerType("EDGE_ACCELERATION_START", new g2o::HyperGraphElementCreator<EdgeAccelerationStart>);
   factory->registerType("EDGE_ACCELERATION_GOAL", new g2o::HyperGraphElementCreator<EdgeAccelerationGoal>);
   factory->registerType("EDGE_ACCELERATION_HOLONOMIC", new g2o::HyperGraphElementCreator<EdgeAccelerationHolonomic>);
   factory->registerType("EDGE_ACCELERATION_HOLONOMIC_START", new g2o::HyperGraphElementCreator<EdgeAccelerationHolonomicStart>);
   factory->registerType("EDGE_ACCELERATION_HOLONOMIC_GOAL", new g2o::HyperGraphElementCreator<EdgeAccelerationHolonomicGoal>);
-  factory->registerType("EDGE_ACCELERATION_MECANUM", new g2o::HyperGraphElementCreator<EdgeAccelerationMecanum>);
-  factory->registerType("EDGE_ACCELERATION_MECANUM_START", new g2o::HyperGraphElementCreator<EdgeAccelerationMecanumStart>);
-  factory->registerType("EDGE_ACCELERATION_MECANUM_GOAL", new g2o::HyperGraphElementCreator<EdgeAccelerationMecanumGoal>);
   factory->registerType("EDGE_KINEMATICS_DIFF_DRIVE", new g2o::HyperGraphElementCreator<EdgeKinematicsDiffDrive>);
   factory->registerType("EDGE_KINEMATICS_CARLIKE", new g2o::HyperGraphElementCreator<EdgeKinematicsCarlike>);
-  factory->registerType("EDGE_KINEMATICS_MECANUM", new g2o::HyperGraphElementCreator<EdgeKinematicsMecanum>);
   factory->registerType("EDGE_OBSTACLE", new g2o::HyperGraphElementCreator<EdgeObstacle>);
   factory->registerType("EDGE_INFLATED_OBSTACLE", new g2o::HyperGraphElementCreator<EdgeInflatedObstacle>);
   factory->registerType("EDGE_DYNAMIC_OBSTACLE", new g2o::HyperGraphElementCreator<EdgeDynamicObstacle>);
@@ -159,10 +153,10 @@ boost::shared_ptr<g2o::SparseOptimizer> TebOptimalPlanner::initOptimizer()
 
   // allocating the optimizer
   boost::shared_ptr<g2o::SparseOptimizer> optimizer = boost::make_shared<g2o::SparseOptimizer>();
-  std::unique_ptr<TEBLinearSolver> linear_solver(new TEBLinearSolver()); // see typedef in optimization.h
-  linear_solver->setBlockOrdering(true);
-  std::unique_ptr<TEBBlockSolver> block_solver(new TEBBlockSolver(std::move(linear_solver)));
-  g2o::OptimizationAlgorithmLevenberg* solver = new g2o::OptimizationAlgorithmLevenberg(std::move(block_solver));
+  TEBLinearSolver* linearSolver = new TEBLinearSolver(); // see typedef in optimization.h
+  linearSolver->setBlockOrdering(true);
+  TEBBlockSolver* blockSolver = new TEBBlockSolver(linearSolver);
+  g2o::OptimizationAlgorithmLevenberg* solver = new g2o::OptimizationAlgorithmLevenberg(blockSolver);
 
   optimizer->setAlgorithm(solver);
   
@@ -336,14 +330,10 @@ bool TebOptimalPlanner::buildGraph(double weight_multiplier)
 
   AddEdgesTimeOptimal();	
   
-  //if (cfg_->robot.min_turning_radius == 0 || cfg_->optim.weight_kinematics_turning_radius == 0)
-  if (cfg_->robot.type == 0)
+  if (cfg_->robot.min_turning_radius == 0 || cfg_->optim.weight_kinematics_turning_radius == 0)
     AddEdgesKinematicsDiffDrive(); // we have a differential drive robot
-  //else
-  else if (cfg_->robot.type == 1)
-    AddEdgesKinematicsCarlike(); // we have a carlike robot since the turning radius is bounded from below.
   else
-    AddEdgesKinematicsMecanum(); // we have a Mecanum-wheeled robot
+    AddEdgesKinematicsCarlike(); // we have a carlike robot since the turning radius is bounded from below.
 
     
   AddEdgesPreferRotDir();
@@ -719,8 +709,7 @@ void TebOptimalPlanner::AddEdgesViaPoints()
 
 void TebOptimalPlanner::AddEdgesVelocity()
 {
-  //if (cfg_->robot.max_vel_y == 0) // non-holonomic robot
-  if (cfg_->robot.type == 0) // non-holonomic robot
+  if (cfg_->robot.max_vel_y == 0) // non-holonomic robot
   {
     if ( cfg_->optim.weight_max_vel_x==0 && cfg_->optim.weight_max_vel_theta==0)
       return; // if weight equals zero skip adding edges!
@@ -743,8 +732,7 @@ void TebOptimalPlanner::AddEdgesVelocity()
       optimizer_->addEdge(velocity_edge);
     }
   }
-  //else // holonomic-robot
-  else if (cfg_->robot.type == 1)
+  else // holonomic-robot
   {
     if ( cfg_->optim.weight_max_vel_x==0 && cfg_->optim.weight_max_vel_y==0 && cfg_->optim.weight_max_vel_theta==0)
       return; // if weight equals zero skip adding edges!
@@ -768,31 +756,6 @@ void TebOptimalPlanner::AddEdgesVelocity()
     } 
     
   }
-  else // Mecanum-wheeled robot
-  {
-    if ( cfg_->optim.weight_max_vel_x==0 && cfg_->optim.weight_max_vel_y==0 && cfg_->optim.weight_max_vel_theta==0)
-      return; // if weight equals zero skip adding edges!
-      
-    int n = teb_.sizePoses();
-    Eigen::Matrix<double,4,4> information;
-    information.fill(0);
-    information(0,0) = cfg_->optim.weight_max_vel_wheel;
-    information(1,1) = cfg_->optim.weight_max_vel_wheel;
-    information(2,2) = cfg_->optim.weight_max_vel_wheel;
-    information(3,3) = cfg_->optim.weight_max_vel_wheel;
-
-    for (int i=0; i < n - 1; ++i)
-    {
-      EdgeVelocityMecanum* velocity_edge = new EdgeVelocityMecanum;
-      velocity_edge->setVertex(0,teb_.PoseVertex(i));
-      velocity_edge->setVertex(1,teb_.PoseVertex(i+1));
-      velocity_edge->setVertex(2,teb_.TimeDiffVertex(i));
-      velocity_edge->setInformation(information);
-      velocity_edge->setTebConfig(*cfg_);
-      optimizer_->addEdge(velocity_edge);
-    } 
-    
-  }
 }
 
 void TebOptimalPlanner::AddEdgesAcceleration()
@@ -802,8 +765,7 @@ void TebOptimalPlanner::AddEdgesAcceleration()
 
   int n = teb_.sizePoses();  
     
-  //if (cfg_->robot.max_vel_y == 0 || cfg_->robot.acc_lim_y == 0) // non-holonomic robot
-  if (cfg_->robot.type == 0) // non-holonomic robot
+  if (cfg_->robot.max_vel_y == 0 || cfg_->robot.acc_lim_y == 0) // non-holonomic robot
   {
     Eigen::Matrix<double,2,2> information;
     information.fill(0);
@@ -850,8 +812,7 @@ void TebOptimalPlanner::AddEdgesAcceleration()
       optimizer_->addEdge(acceleration_edge);
     }  
   }
-  //else // holonomic robot
-  else if (cfg_->robot.type == 1)
+  else // holonomic robot
   {
     Eigen::Matrix<double,3,3> information;
     information.fill(0);
@@ -890,55 +851,6 @@ void TebOptimalPlanner::AddEdgesAcceleration()
     if (vel_goal_.first)
     {
       EdgeAccelerationHolonomicGoal* acceleration_edge = new EdgeAccelerationHolonomicGoal;
-      acceleration_edge->setVertex(0,teb_.PoseVertex(n-2));
-      acceleration_edge->setVertex(1,teb_.PoseVertex(n-1));
-      acceleration_edge->setVertex(2,teb_.TimeDiffVertex( teb_.sizeTimeDiffs()-1 ));
-      acceleration_edge->setGoalVelocity(vel_goal_.second);
-      acceleration_edge->setInformation(information);
-      acceleration_edge->setTebConfig(*cfg_);
-      optimizer_->addEdge(acceleration_edge);
-    }  
-  }
-  else // Mecanum-wheeled robot
-  {
-    Eigen::Matrix<double,4,4> information;
-    information.fill(0);
-    information(0,0) = cfg_->optim.weight_acc_lim_wheel;
-    information(1,1) = cfg_->optim.weight_acc_lim_wheel;
-    information(2,2) = cfg_->optim.weight_acc_lim_wheel;
-    information(4,4) = cfg_->optim.weight_acc_lim_wheel;
-    
-    // check if an initial velocity should be taken into accound
-    if (vel_start_.first)
-    {
-      EdgeAccelerationMecanumStart* acceleration_edge = new EdgeAccelerationMecanumStart;
-      acceleration_edge->setVertex(0,teb_.PoseVertex(0));
-      acceleration_edge->setVertex(1,teb_.PoseVertex(1));
-      acceleration_edge->setVertex(2,teb_.TimeDiffVertex(0));
-      acceleration_edge->setInitialVelocity(vel_start_.second);
-      acceleration_edge->setInformation(information);
-      acceleration_edge->setTebConfig(*cfg_);
-      optimizer_->addEdge(acceleration_edge);
-    }
-
-    // now add the usual acceleration edge for each tuple of three teb poses
-    for (int i=0; i < n - 2; ++i)
-    {
-      EdgeAccelerationMecanum* acceleration_edge = new EdgeAccelerationMecanum;
-      acceleration_edge->setVertex(0,teb_.PoseVertex(i));
-      acceleration_edge->setVertex(1,teb_.PoseVertex(i+1));
-      acceleration_edge->setVertex(2,teb_.PoseVertex(i+2));
-      acceleration_edge->setVertex(3,teb_.TimeDiffVertex(i));
-      acceleration_edge->setVertex(4,teb_.TimeDiffVertex(i+1));
-      acceleration_edge->setInformation(information);
-      acceleration_edge->setTebConfig(*cfg_);
-      optimizer_->addEdge(acceleration_edge);
-    }
-    
-    // check if a goal velocity should be taken into accound
-    if (vel_goal_.first)
-    {
-      EdgeAccelerationMecanumGoal* acceleration_edge = new EdgeAccelerationMecanumGoal;
       acceleration_edge->setVertex(0,teb_.PoseVertex(n-2));
       acceleration_edge->setVertex(1,teb_.PoseVertex(n-1));
       acceleration_edge->setVertex(2,teb_.TimeDiffVertex( teb_.sizeTimeDiffs()-1 ));
@@ -996,7 +908,7 @@ void TebOptimalPlanner::AddEdgesKinematicsDiffDrive()
 
 void TebOptimalPlanner::AddEdgesKinematicsCarlike()
 {
-  if (cfg_->optim.weight_kinematics_nh==0 && cfg_->optim.weight_kinematics_turning_radius)
+  if (cfg_->optim.weight_kinematics_nh==0 && cfg_->optim.weight_kinematics_turning_radius==0)
     return; // if weight equals zero skip adding edges!
 
   // create edge for satisfiying kinematic constraints
@@ -1014,26 +926,6 @@ void TebOptimalPlanner::AddEdgesKinematicsCarlike()
     kinematics_edge->setTebConfig(*cfg_);
     optimizer_->addEdge(kinematics_edge);
   }  
-}
-
-void TebOptimalPlanner::AddEdgesKinematicsMecanum()
-{
-  if (cfg_->optim.weight_kinematics_nh==0 && cfg_->optim.weight_kinematics_forward_drive==0)
-    return; // if weight equals zero skip adding edges!
-  
-  // create edge for satisfiying kinematic constraints
-  Eigen::Matrix<double,1,1> information_kinematics;
-  information_kinematics(0, 0) = cfg_->optim.weight_kinematics_nh;
-  
-  for (int i=0; i < teb_.sizePoses()-1; i++) // ignore twiced start only
-  {
-    EdgeKinematicsMecanum* kinematics_edge = new EdgeKinematicsMecanum;
-    kinematics_edge->setVertex(0,teb_.PoseVertex(i));
-    kinematics_edge->setVertex(1,teb_.PoseVertex(i+1));      
-    kinematics_edge->setInformation(information_kinematics);
-    kinematics_edge->setTebConfig(*cfg_);
-    optimizer_->addEdge(kinematics_edge);
-  }	 
 }
 
 
@@ -1124,13 +1016,6 @@ void TebOptimalPlanner::computeCurrentCost(double obst_cost_scale, double viapoi
     if (edge_kinematics_cl!=NULL)
     {
       cost_ += edge_kinematics_cl->getError().squaredNorm();
-      continue;
-    }
-
-    EdgeKinematicsMecanum* edge_kinematics_m = dynamic_cast<EdgeKinematicsMecanum*>(*it);
-    if (edge_kinematics_m!=NULL)
-    {
-      cost_ += edge_kinematics_m->getError().squaredNorm();
       continue;
     }
     
