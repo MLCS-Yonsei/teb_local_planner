@@ -729,6 +729,280 @@ public:
 
 
 
+
+/**
+ * @class EdgeAccelerationMecanum
+ * @brief Edge defining the cost function for limiting the translational and rotational acceleration.
+ * 
+ * The edge depends on five vertices \f$ \mathbf{s}_i, \mathbf{s}_{ip1}, \mathbf{s}_{ip2}, \Delta T_i, \Delta T_{ip1} \f$ and minimizes:
+ * \f$ \min \textrm{penaltyInterval}( [ax, ay, omegadot } ]^T ) \cdot weight \f$. \n
+ * \e ax is calculated using the difference quotient (twice) and the x position parts of all three poses \n
+ * \e ay is calculated using the difference quotient (twice) and the y position parts of all three poses \n
+ * \e omegadot is calculated using the difference quotient of the yaw angles followed by a normalization to [-pi, pi]. \n 
+ * \e weight can be set using setInformation() \n
+ * \e penaltyInterval denotes the penalty function, see penaltyBoundToInterval() \n
+ * The dimension of the error / cost vector is 3: the first component represents the translational acceleration (x-dir), 
+ * the second one the strafing acceleration and the third one the rotational acceleration.
+ * @see TebOptimalPlanner::AddEdgesAcceleration
+ * @see EdgeAccelerationMecanumStart
+ * @see EdgeAccelerationMecanumGoal
+ * @remarks Do not forget to call setTebConfig()
+ * @remarks Refer to EdgeAccelerationMecanumStart() and EdgeAccelerationMecanumGoal() for defining boundary values!
+ */    
+class EdgeAccelerationMecanum : public BaseTebMultiEdge<4, double>
+{
+public:
+
+  /**
+   * @brief Construct edge.
+   */    
+  EdgeAccelerationMecanum()
+  {
+    this->resize(5);
+  }
+    
+  /**
+   * @brief Actual cost function
+   */   
+  void computeError()
+  {
+    ROS_ASSERT_MSG(cfg_, "You must call setTebConfig on EdgeAcceleration()");
+    const VertexPose* pose1 = static_cast<const VertexPose*>(_vertices[0]);
+    const VertexPose* pose2 = static_cast<const VertexPose*>(_vertices[1]);
+    const VertexPose* pose3 = static_cast<const VertexPose*>(_vertices[2]);
+    const VertexTimeDiff* dt1 = static_cast<const VertexTimeDiff*>(_vertices[3]);
+    const VertexTimeDiff* dt2 = static_cast<const VertexTimeDiff*>(_vertices[4]);
+
+    // VELOCITY & ACCELERATION
+    Eigen::Vector2d diff1 = pose2->position() - pose1->position();
+    Eigen::Vector2d diff2 = pose3->position() - pose2->position();
+    
+    double cos_theta1 = std::cos(pose1->theta());
+    double sin_theta1 = std::sin(pose1->theta()); 
+    double cos_theta2 = std::cos(pose2->theta());
+    double sin_theta2 = std::sin(pose2->theta()); 
+    
+    // transform pose2 into robot frame pose1 (inverse 2d rotation matrix)
+    double p1_dx =  cos_theta1*diff1.x() + sin_theta1*diff1.y();
+    double p1_dy = -sin_theta1*diff1.x() + cos_theta1*diff1.y();
+    // transform pose3 into robot frame pose2 (inverse 2d rotation matrix)
+    double p2_dx =  cos_theta2*diff2.x() + sin_theta2*diff2.y();
+    double p2_dy = -sin_theta2*diff2.x() + cos_theta2*diff2.y();
+    
+    double vel1_x = p1_dx / dt1->dt();
+    double vel1_y = p1_dy / dt1->dt();
+    double vel2_x = p2_dx / dt2->dt();
+    double vel2_y = p2_dy / dt2->dt();
+    
+    double dt12 = dt1->dt() + dt2->dt();
+    
+    double acc_x  = (vel2_x - vel1_x)*2 / dt12 / cfg_->robot.acc_lim_x;
+    double acc_y  = (vel2_y - vel1_y)*2 / dt12 / cfg_->robot.acc_lim_y;
+   
+    // ANGULAR ACCELERATION
+    double omega1 = g2o::normalize_theta(pose2->theta() - pose1->theta()) / dt1->dt();
+    double omega2 = g2o::normalize_theta(pose3->theta() - pose2->theta()) / dt2->dt();
+    double acc_rot  = (omega2 - omega1)*2 / dt12 / cfg_->robot.acc_lim_theta;
+      
+    _error[0] = penaltyBoundToInterval(acc_x + acc_y + acc_rot, 1.0, cfg_->optim.penalty_epsilon);
+    _error[1] = penaltyBoundToInterval(acc_x + acc_y - acc_rot, 1.0, cfg_->optim.penalty_epsilon);
+    _error[2] = penaltyBoundToInterval(acc_x - acc_y + acc_rot, 1.0, cfg_->optim.penalty_epsilon);
+    _error[3] = penaltyBoundToInterval(acc_x - acc_y - acc_rot, 1.0, cfg_->optim.penalty_epsilon);
+
+    
+    ROS_ASSERT_MSG(std::isfinite(_error[0]) && std::isfinite(_error[1]) && std::isfinite(_error[2]) && std::isfinite(_error[3]),
+                   "EdgeAcceleration::computeError() _error[0]=%f _error[1]=%f _error[2]=%f _error[3]=%f\n",_error[0],_error[1],_error[2],_error[3]);
+  }
+
+public: 
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+   
+};
+
+
+/**
+ * @class EdgeAccelerationMecanumStart
+ * @brief Edge defining the cost function for limiting the translational and rotational acceleration at the beginning of the trajectory.
+ *
+ * The edge depends on three vertices \f$ \mathbf{s}_i, \mathbf{s}_{ip1}, \Delta T_i \f$, an initial velocity defined by setInitialVelocity()
+ * and minimizes: \n
+ * \f$ \min \textrm{penaltyInterval}( [ax, ay, omegadot ]^T ) \cdot weight \f$. \n
+ * \e ax is calculated using the difference quotient (twice) and the x-position parts of the poses. \n
+ * \e ay is calculated using the difference quotient (twice) and the y-position parts of the poses. \n
+ * \e omegadot is calculated using the difference quotient of the yaw angles followed by a normalization to [-pi, pi].  \n
+ * \e weight can be set using setInformation(). \n
+ * \e penaltyInterval denotes the penalty function, see penaltyBoundToInterval(). \n
+ * The dimension of the error / cost vector is 3: the first component represents the translational acceleration,
+ * the second one the strafing acceleration and the third one the rotational acceleration.
+ * @see TebOptimalPlanner::AddEdgesAcceleration
+ * @see EdgeAccelerationMecanum
+ * @see EdgeAccelerationMecanumGoal
+ * @remarks Do not forget to call setTebConfig()
+ * @remarks Refer to EdgeAccelerationMecanumGoal() for defining boundary values at the end of the trajectory!
+ */      
+class EdgeAccelerationMecanumStart : public BaseTebMultiEdge<4, const geometry_msgs::Twist*>
+{
+public:
+
+  /**
+   * @brief Construct edge.
+   */   
+  EdgeAccelerationMecanumStart()
+  {
+    this->resize(3);
+    _measurement = NULL;
+  }
+    
+  /**
+   * @brief Actual cost function
+   */   
+  void computeError()
+  {
+    ROS_ASSERT_MSG(cfg_ && _measurement, "You must call setTebConfig() and setStartVelocity() on EdgeAccelerationStart()");
+    const VertexPose* pose1 = static_cast<const VertexPose*>(_vertices[0]);
+    const VertexPose* pose2 = static_cast<const VertexPose*>(_vertices[1]);
+    const VertexTimeDiff* dt = static_cast<const VertexTimeDiff*>(_vertices[2]);
+
+    // VELOCITY & ACCELERATION
+    Eigen::Vector2d diff = pose2->position() - pose1->position();
+            
+    double cos_theta1 = std::cos(pose1->theta());
+    double sin_theta1 = std::sin(pose1->theta()); 
+    
+    // transform pose2 into robot frame pose1 (inverse 2d rotation matrix)
+    double p1_dx =  cos_theta1*diff.x() + sin_theta1*diff.y();
+    double p1_dy = -sin_theta1*diff.x() + cos_theta1*diff.y();
+    
+    double vel1_x = _measurement->linear.x;
+    double vel1_y = _measurement->linear.y;
+    double vel2_x = p1_dx / dt->dt();
+    double vel2_y = p1_dy / dt->dt();
+
+    double acc_x  = (vel2_x - vel1_x) / dt->dt() / cfg_->robot.acc_lim_x;
+    double acc_y  = (vel2_y - vel1_y) / dt->dt() / cfg_->robot.acc_lim_y;
+    
+    // ANGULAR ACCELERATION
+    double omega1 = _measurement->angular.z;
+    double omega2 = g2o::normalize_theta(pose2->theta() - pose1->theta()) / dt->dt();
+    double acc_rot  = (omega2 - omega1) / dt->dt() / cfg_->robot.acc_lim_theta;
+      
+    _error[0] = penaltyBoundToInterval(acc_x + acc_y + acc_rot, 1.0, cfg_->optim.penalty_epsilon);
+    _error[1] = penaltyBoundToInterval(acc_x + acc_y - acc_rot, 1.0, cfg_->optim.penalty_epsilon);
+    _error[2] = penaltyBoundToInterval(acc_x - acc_y + acc_rot, 1.0, cfg_->optim.penalty_epsilon);
+    _error[3] = penaltyBoundToInterval(acc_x - acc_y - acc_rot, 1.0, cfg_->optim.penalty_epsilon);
+
+    ROS_ASSERT_MSG(std::isfinite(_error[0]) && std::isfinite(_error[1]) && std::isfinite(_error[2]) && std::isfinite(_error[3]),
+                   "EdgeAccelerationStart::computeError() _error[0]=%f _error[1]=%f _error[2]=%f _error[3]=%f\n",_error[0],_error[1],_error[2],_error[3]);
+  }
+  
+  /**
+   * @brief Set the initial velocity that is taken into account for calculating the acceleration
+   * @param vel_start twist message containing the translational and rotational velocity
+   */    
+  void setInitialVelocity(const geometry_msgs::Twist& vel_start)
+  {
+    _measurement = &vel_start;
+  }
+        
+public:       
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+};    
+    
+       
+
+/**
+ * @class EdgeAccelerationMecanumGoal
+ * @brief Edge defining the cost function for limiting the translational and rotational acceleration at the end of the trajectory.
+ * 
+ * The edge depends on three vertices \f$ \mathbf{s}_i, \mathbf{s}_{ip1}, \Delta T_i \f$, an initial velocity defined by setGoalVelocity()
+ * and minimizes: \n
+ * \f$ \min \textrm{penaltyInterval}( [ax, ay, omegadot ]^T ) \cdot weight \f$. \n
+ * \e ax is calculated using the difference quotient (twice) and the x-position parts of the poses \n
+ * \e ay is calculated using the difference quotient (twice) and the y-position parts of the poses \n
+ * \e omegadot is calculated using the difference quotient of the yaw angles followed by a normalization to [-pi, pi].  \n
+ * \e weight can be set using setInformation() \n
+ * \e penaltyInterval denotes the penalty function, see penaltyBoundToInterval() \n
+ * The dimension of the error / cost vector is 3: the first component represents the translational acceleration,
+ * the second one is the strafing velocity and the third one the rotational acceleration.
+ * @see TebOptimalPlanner::AddEdgesAcceleration
+ * @see EdgeAccelerationMecanum
+ * @see EdgeAccelerationMecanumStart
+ * @remarks Do not forget to call setTebConfig()
+ * @remarks Refer to EdgeAccelerationMecanumStart() for defining boundary (initial) values at the end of the trajectory
+ */  
+class EdgeAccelerationMecanumGoal : public BaseTebMultiEdge<4, const geometry_msgs::Twist*>
+{
+public:
+
+  /**
+   * @brief Construct edge.
+   */  
+  EdgeAccelerationMecanumGoal()
+  {
+    _measurement = NULL;
+    this->resize(3);
+  }
+  
+  /**
+   * @brief Actual cost function
+   */ 
+  void computeError()
+  {
+    ROS_ASSERT_MSG(cfg_ && _measurement, "You must call setTebConfig() and setGoalVelocity() on EdgeAccelerationGoal()");
+    const VertexPose* pose_pre_goal = static_cast<const VertexPose*>(_vertices[0]);
+    const VertexPose* pose_goal = static_cast<const VertexPose*>(_vertices[1]);
+    const VertexTimeDiff* dt = static_cast<const VertexTimeDiff*>(_vertices[2]);
+
+    // VELOCITY & ACCELERATION
+
+    Eigen::Vector2d diff = pose_goal->position() - pose_pre_goal->position();    
+    
+    double cos_theta1 = std::cos(pose_pre_goal->theta());
+    double sin_theta1 = std::sin(pose_pre_goal->theta()); 
+    
+    // transform pose2 into robot frame pose1 (inverse 2d rotation matrix)
+    double p1_dx =  cos_theta1*diff.x() + sin_theta1*diff.y();
+    double p1_dy = -sin_theta1*diff.x() + cos_theta1*diff.y();
+   
+    double vel1_x = p1_dx / dt->dt();
+    double vel1_y = p1_dy / dt->dt();
+    double vel2_x = _measurement->linear.x;
+    double vel2_y = _measurement->linear.y;
+    
+    double acc_x  = (vel2_x - vel1_x) / dt->dt() / cfg_->robot.acc_lim_x;
+    double acc_y  = (vel2_y - vel1_y) / dt->dt() / cfg_->robot.acc_lim_y;
+    
+    // ANGULAR ACCELERATION
+    double omega1 = g2o::normalize_theta(pose_goal->theta() - pose_pre_goal->theta()) / dt->dt();
+    double omega2 = _measurement->angular.z;
+    double acc_rot  = (omega2 - omega1) / dt->dt() / cfg_->robot.acc_lim_theta;
+      
+    _error[0] = penaltyBoundToInterval(acc_x + acc_y + acc_rot, 1.0, cfg_->optim.penalty_epsilon);
+    _error[1] = penaltyBoundToInterval(acc_x + acc_y - acc_rot, 1.0, cfg_->optim.penalty_epsilon);
+    _error[2] = penaltyBoundToInterval(acc_x - acc_y + acc_rot, 1.0, cfg_->optim.penalty_epsilon);
+    _error[3] = penaltyBoundToInterval(acc_x - acc_y - acc_rot, 1.0, cfg_->optim.penalty_epsilon);
+
+    ROS_ASSERT_MSG(std::isfinite(_error[0]) && std::isfinite(_error[1]) && std::isfinite(_error[2]) && std::isfinite(_error[3]),
+                   "EdgeAccelerationGoal::computeError() _error[0]=%f _error[1]=%f _error[2]=%f _error[3]=%f\n",_error[0],_error[1],_error[2],_error[3]);
+  }
+  
+  
+  /**
+   * @brief Set the goal / final velocity that is taken into account for calculating the acceleration
+   * @param vel_goal twist message containing the translational and rotational velocity
+   */    
+  void setGoalVelocity(const geometry_msgs::Twist& vel_goal)
+  {
+    _measurement = &vel_goal;
+  }
+  
+
+public: 
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+}; 
+
+
+
 }; // end namespace
 
 #endif /* EDGE_ACCELERATION_H_ */
