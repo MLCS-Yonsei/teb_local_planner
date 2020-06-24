@@ -172,9 +172,9 @@ catkin_package(
 
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
-# include_directories(include)
+include_directories(include)
 include_directories(
-  include
+  SYSTEM
   ${EXTERNAL_INCLUDE_DIRS}
   ${catkin_INCLUDE_DIRS}
 )
@@ -266,6 +266,13 @@ install(DIRECTORY
 #############
 ## Testing ##
 #############
+
+if (CATKIN_ENABLE_TESTING)
+  catkin_add_gtest(test_teb_basics test/teb_basics.cpp)
+  if(TARGET test_teb_basics)
+     target_link_libraries(test_teb_basics teb_local_planner)
+  endif()
+endif()
 
 ## Add gtest based cpp test target and link libraries
 # catkin_add_gtest(${PROJECT_NAME}-test test/test_teb_local_planner.cpp)

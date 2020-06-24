@@ -43,7 +43,7 @@
 
 #include <boost/algorithm/string.hpp>
 
-//MBF return codes
+// MBF return codes
 #include <mbf_msgs/ExePathResult.h>
 
 // pluginlib macros
@@ -369,10 +369,8 @@ uint32_t TebLocalPlannerROS::computeVelocityCommands(const geometry_msgs::PoseSt
   bool feasible = planner_->isTrajectoryFeasible(costmap_model_.get(), footprint_spec_, robot_inscribed_radius_, robot_circumscribed_radius, cfg_.trajectory.feasibility_check_no_poses);
   if (!feasible)
   {
-    cmd_vel.twist.linear.x = 0;
-    cmd_vel.twist.linear.y = 0;
-    cmd_vel.twist.angular.z = 0;
-   
+    cmd_vel.twist.linear.x = cmd_vel.twist.linear.y = cmd_vel.twist.angular.z = 0;
+
     // now we reset everything to start again with the initialization of new trajectories.
     planner_->clearPlanner();
     ROS_WARN("TebLocalPlannerROS: trajectory is not feasible. Resetting planner...");
@@ -385,7 +383,7 @@ uint32_t TebLocalPlannerROS::computeVelocityCommands(const geometry_msgs::PoseSt
   }
 
   // Get the velocity command for this sampling interval
-  if (!planner_->getVelocityCommand(cmd_vel.twist.linear.x, cmd_vel.twist.linear.y, cmd_vel.twist.angular.z))
+  if (!planner_->getVelocityCommand(cmd_vel.twist.linear.x, cmd_vel.twist.linear.y, cmd_vel.twist.angular.z, cfg_.trajectory.control_look_ahead_poses))
   {
     planner_->clearPlanner();
     ROS_WARN("TebLocalPlannerROS: velocity command invalid. Resetting planner...");
@@ -842,21 +840,18 @@ double TebLocalPlannerROS::estimateLocalGoalOrientation(const std::vector<geomet
       
 void TebLocalPlannerROS::saturateVelocity(double& vx, double& vy, double& omega, double max_vel_x, double max_vel_y, double max_vel_theta, double max_vel_x_backwards) const
 {
+  double ratio_x = 1, ratio_omega = 1, ratio_y = 1;
   // Limit translational velocity for forward driving
   if (vx > max_vel_x)
-    vx = max_vel_x;
+    ratio_x = max_vel_x / vx;
   
   // limit strafing velocity
-  if (vy > max_vel_y)
-    vy = max_vel_y;
-  else if (vy < -max_vel_y)
-    vy = -max_vel_y;
+  if (vy > max_vel_y || vy < -max_vel_y)
+    ratio_y = std::abs(vy / max_vel_y);
   
   // Limit angular velocity
-  if (omega > max_vel_theta)
-    omega = max_vel_theta;
-  else if (omega < -max_vel_theta)
-    omega = -max_vel_theta;
+  if (omega > max_vel_theta || omega < -max_vel_theta)
+    ratio_omega = std::abs(max_vel_theta / omega);
   
   // Limit backwards velocity
   if (max_vel_x_backwards<=0)
@@ -864,7 +859,21 @@ void TebLocalPlannerROS::saturateVelocity(double& vx, double& vy, double& omega,
     ROS_WARN_ONCE("TebLocalPlannerROS(): Do not choose max_vel_x_backwards to be <=0. Disable backwards driving by increasing the optimization weight for penalyzing backwards driving.");
   }
   else if (vx < -max_vel_x_backwards)
-    vx = -max_vel_x_backwards;
+    ratio_x = - max_vel_x_backwards / vx;
+
+  if (cfg_.robot.use_proportional_saturation)
+  {
+    double ratio = std::min(std::min(ratio_x, ratio_y), ratio_omega);
+    vx *= ratio;
+    vy *= ratio;
+    omega *= ratio;
+  }
+  else
+  {
+    vx *= ratio_x;
+    vy *= ratio_y;
+    omega *= ratio_omega;
+  }
 }
      
      
