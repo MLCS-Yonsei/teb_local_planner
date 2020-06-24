@@ -125,7 +125,7 @@ bool HomotopyClassPlanner::plan(const PoseSE2& start, const PoseSE2& goal, const
   return true;
 }
 
-bool HomotopyClassPlanner::getVelocityCommand(double& vx, double& vy, double& omega) const
+bool HomotopyClassPlanner::getVelocityCommand(double& vx, double& vy, double& omega, int look_ahead_poses) const
 {
   TebOptimalPlannerConstPtr best_teb = bestTeb();
   if (!best_teb)
@@ -136,7 +136,7 @@ bool HomotopyClassPlanner::getVelocityCommand(double& vx, double& vy, double& om
     return false;
   }
 
-  return best_teb->getVelocityCommand(vx, vy, omega);
+  return best_teb->getVelocityCommand(vx, vy, omega, look_ahead_poses);
 }
 
 
@@ -381,7 +381,7 @@ TebOptimalPlannerPtr HomotopyClassPlanner::addAndInitNewTeb(const std::vector<ge
     return TebOptimalPlannerPtr();
   TebOptimalPlannerPtr candidate = TebOptimalPlannerPtr( new TebOptimalPlanner(*cfg_, obstacles_, robot_model_, visualization_));
 
-  candidate->teb().initTrajectoryToGoal(initial_plan, cfg_->robot.max_vel_x,
+  candidate->teb().initTrajectoryToGoal(initial_plan, cfg_->robot.max_vel_x, cfg_->robot.max_vel_theta,
     cfg_->trajectory.global_plan_overwrite_orientation, cfg_->trajectory.min_samples, cfg_->trajectory.allow_init_with_backwards_motion);
 
   if (start_velocity)
@@ -405,7 +405,9 @@ void HomotopyClassPlanner::updateAllTEBs(const PoseSE2* start, const PoseSE2* go
 {
   // If new goal is too far away, clear all existing trajectories to let them reinitialize later.
   // Since all Tebs are sharing the same fixed goal pose, just take the first candidate:
-  if (!tebs_.empty() && (goal->position() - tebs_.front()->teb().BackPose().position()).norm() >= cfg_->trajectory.force_reinit_new_goal_dist)
+  if (!tebs_.empty()
+      && ((goal->position() - tebs_.front()->teb().BackPose().position()).norm() >= cfg_->trajectory.force_reinit_new_goal_dist
+        || fabs(g2o::normalize_theta(goal->theta() - tebs_.front()->teb().BackPose().theta())) >= cfg_->trajectory.force_reinit_new_goal_angular))
   {
       ROS_DEBUG("New goal: distance to existing goal is higher than the specified threshold. Reinitalizing trajectories.");
       tebs_.clear();
@@ -680,21 +682,86 @@ void HomotopyClassPlanner::setPreferredTurningDir(RotType dir)
   }
 }
 
-bool HomotopyClassPlanner::isHorizonReductionAppropriate(const std::vector<geometry_msgs::PoseStamped>& initial_plan) const
-{
-  TebOptimalPlannerPtr best = bestTeb();
-  if (!best)
-    return false;
-
-  return best->isHorizonReductionAppropriate(initial_plan);
-}
-
 void HomotopyClassPlanner::computeCurrentCost(std::vector<double>& cost, double obst_cost_scale, double viapoint_cost_scale, bool alternative_time_cost)
 {
   for (TebOptPlannerContainer::iterator it_teb = tebs_.begin(); it_teb != tebs_.end(); ++it_teb)
   {
     it_teb->get()->computeCurrentCost(cost, obst_cost_scale, viapoint_cost_scale, alternative_time_cost);
   }
+}
+
+void HomotopyClassPlanner::deletePlansDetouringBackwards(const double orient_threshold,
+  const double len_orientation_vector)
+{
+  if (tebs_.size() < 2 || !best_teb_ || std::find(tebs_.begin(), tebs_.end(), best_teb_) == tebs_.end() ||
+    best_teb_->teb().sizePoses() < 2)
+  {
+    return;  // A moving direction wasn't chosen yet
+  }
+  double current_movement_orientation;
+  double best_plan_duration = std::max(best_teb_->teb().getSumOfAllTimeDiffs(), 1.0);
+  if(!computeStartOrientation(best_teb_, len_orientation_vector, current_movement_orientation))
+    return;  // The plan is shorter than len_orientation_vector
+  for(auto it_teb = tebs_.begin(); it_teb != tebs_.end();)
+  {
+    if(*it_teb == best_teb_)  // The current plan should not be considered a detour
+    {
+      ++it_teb;
+      continue;
+    }
+    if((*it_teb)->teb().sizePoses() < 2)
+    {
+      ROS_DEBUG("Discarding a plan with less than 2 poses");
+      it_teb = removeTeb(*it_teb);
+      continue;
+    }
+    double plan_orientation;
+    if(!computeStartOrientation(*it_teb, len_orientation_vector, plan_orientation))
+    {
+      ROS_DEBUG("Failed to compute the start orientation for one of the tebs, likely close to the target");
+      it_teb = removeTeb(*it_teb);
+      continue;
+    }
+    if(fabs(g2o::normalize_theta(plan_orientation - current_movement_orientation)) > orient_threshold)
+    {
+      it_teb = removeTeb(*it_teb);  // Plan detouring backwards
+      continue;
+    }
+    if(!it_teb->get()->isOptimized())
+    {
+      ROS_DEBUG("Removing a teb because it's not optimized");
+      it_teb = removeTeb(*it_teb);  // Deletes tebs that cannot be optimized (last optim call failed)
+      continue;
+    }
+    if(it_teb->get()->teb().getSumOfAllTimeDiffs() / best_plan_duration > cfg_->hcp.max_ratio_detours_duration_best_duration)
+    {
+      ROS_DEBUG("Removing a teb because it's duration is much longer than that of the best teb");
+      it_teb = removeTeb(*it_teb);
+      continue;
+    }
+    ++it_teb;
+  }
+}
+
+bool HomotopyClassPlanner::computeStartOrientation(const TebOptimalPlannerPtr plan, const double len_orientation_vector,
+  double& orientation)
+{
+  VertexPose start_pose = plan->teb().Pose(0);
+  bool second_pose_found = false;
+  Eigen::Vector2d start_vector;
+  for(auto& pose : plan->teb().poses())
+  {
+    start_vector = start_pose.position() - pose->position();
+    if(start_vector.norm() > len_orientation_vector)
+    {
+      second_pose_found = true;
+      break;
+    }
+  }
+  if(!second_pose_found)  // The current plan is too short to make assumptions on the start orientation
+    return false;
+  orientation = std::atan2(start_vector[1], start_vector[0]);
+  return true;
 }
 
 void HomotopyClassPlanner::deletePlansDetouringBackwards(const double orient_threshold,
