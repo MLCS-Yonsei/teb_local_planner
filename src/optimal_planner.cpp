@@ -79,6 +79,11 @@ TebOptimalPlanner::~TebOptimalPlanner()
   //g2o::HyperGraphActionLibrary::destroy();
 }
 
+void TebOptimalPlanner::updateRobotModel(RobotFootprintModelPtr robot_model)
+{
+  robot_model_ = robot_model;
+}
+
 void TebOptimalPlanner::initialize(const TebConfig& cfg, ObstContainer* obstacles, RobotFootprintModelPtr robot_model, TebVisualizationPtr visual, const ViaPointContainer* via_points)
 {    
   // init optimizer (set solver and block ordering settings)
@@ -409,8 +414,13 @@ void TebOptimalPlanner::clearGraph()
   // clear optimizer states
   if (optimizer_)
   {
-    //optimizer.edges().clear(); // optimizer.clear deletes edges!!! Therefore do not run optimizer.edges().clear()
-    optimizer_->vertices().clear();  // neccessary, because optimizer->clear deletes pointer-targets (therefore it deletes TEB states!)
+    // we will delete all edges but keep the vertices.
+    // before doing so, we will delete the link from the vertices to the edges.
+    auto& vertices = optimizer_->vertices();
+    for(auto& v : vertices)
+      v.second->edges().clear();
+
+    optimizer_->vertices().clear();  // necessary, because optimizer->clear deletes pointer-targets (therefore it deletes TEB states!)
     optimizer_->clear();
   }
 }
